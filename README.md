@@ -4,10 +4,23 @@ A simulated IoT sensor data pipeline built in Rust. Sensors produce readings at 
 
 ## Architecture
 
-```
-[Sensor] ──TCP──> [Gateway] ──Iggy──> [Consumer]
-[Sensor] ──TCP──> [Gateway] ──Iggy──> [Consumer]
-    ...
+```mermaid
+flowchart LR
+    classDef sensor   fill:#3b82f6,stroke:#1d4ed8,color:#fff
+    classDef gateway  fill:#8b5cf6,stroke:#6d28d9,color:#fff
+    classDef broker   fill:#f59e0b,stroke:#b45309,color:#fff
+    classDef consumer fill:#10b981,stroke:#047857,color:#fff
+
+    S1([Sensor\ntemperature]):::sensor -->|TCP :8080| GW
+    S2([Sensor\nhumidity]):::sensor    -->|TCP :8080| GW
+
+    GW[Gateway]:::gateway -->|publish :8090| IGG
+
+    subgraph Docker
+        IGG[(Apache Iggy)]:::broker
+    end
+
+    IGG -->|poll| C([Consumer]):::consumer
 ```
 
 - **Sensor** — simulates a sensor of a given type, generates randomized readings at a set frequency, and streams them to the gateway using a length-prefixed binary protocol.
