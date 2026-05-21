@@ -41,14 +41,21 @@ flowchart LR
 
 ## Setup
 
-1. Create a `.env` file in the repo root with the Iggy root credentials:
+1. Create a `.env` file in the repo root:
 
    ```bash
+   # Iggy server credentials — used by docker-compose to bootstrap the root user
+   # and by the gateway/consumer at runtime via dotenvy
    IGGY_ROOT_USERNAME=iggy
    IGGY_ROOT_PASSWORD=dev-iggy-password
+
+   # Iggy stream/topic topology — shared by gateway and consumer
+   IGGY_STREAM_NAME=sample-stream
+   IGGY_TOPIC_NAME=sample-topic
+   IGGY_PARTITION_ID=0
    ```
 
-   `.env` is gitignored. The same values are read by both `docker-compose` (to bootstrap the server's root user on first start) and by the gateway/consumer at runtime via `dotenvy`.
+   `.env` is gitignored.
 
 2. Start the Iggy server:
 

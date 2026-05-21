@@ -11,25 +11,31 @@ use tokio::{
 };
 use tracing::{info, warn};
 
-const STREAM_NAME: &str = "sample-stream";
-const TOPIC_NAME: &str = "sample-topic";
-const PARTITION_ID: u32 = 0;
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     dotenvy::dotenv().ok();
     tracing_subscriber::fmt::init();
 
-    let root_username = env::var("IGGY_ROOT_USERNAME")
-        .unwrap_or_else(|_| DEFAULT_ROOT_USERNAME.to_string());
-    let root_password = env::var("IGGY_ROOT_PASSWORD")
-        .map_err(|_| "IGGY_ROOT_PASSWORD must be set (see .env)")?;
+    let root_username =
+        env::var("IGGY_ROOT_USERNAME").unwrap_or_else(|_| DEFAULT_ROOT_USERNAME.to_string());
+    let root_password =
+        env::var("IGGY_ROOT_PASSWORD").map_err(|_| "IGGY_ROOT_PASSWORD must be set (see .env)")?;
+    let stream_name: Arc<str> = env::var("IGGY_STREAM_NAME")
+        .map_err(|_| "IGGY_STREAM_NAME must be set (see .env)")?
+        .into();
+    let topic_name: Arc<str> = env::var("IGGY_TOPIC_NAME")
+        .map_err(|_| "IGGY_TOPIC_NAME must be set (see .env)")?
+        .into();
+    let partition_id = env::var("IGGY_PARTITION_ID")
+        .map_err(|_| "IGGY_PARTITION_ID must be set (see .env)")?
+        .parse::<u32>()
+        .map_err(|_| "IGGY_PARTITION_ID must be a valid u32")?;
 
     let client = Arc::new(IggyClient::default());
     client.connect().await?;
     client.login_user(&root_username, &root_password).await?;
 
-    let (stream_id, topic_id) = init_system(&client).await?;
+    let (stream_id, topic_id) = init_system(&client, &stream_name, &topic_name).await?;
     let listener = TcpListener::bind("127.0.0.1:8080").await?;
 
     loop {
@@ -37,17 +43,32 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
         let client = Arc::clone(&client);
 
+        let stream_name = Arc::clone(&stream_name);
+        let topic_name = Arc::clone(&topic_name);
         tokio::spawn(async move {
-            let _ = handle_client(stream, client, stream_id, topic_id).await;
+            let _ = handle_client(
+                stream,
+                client,
+                stream_id,
+                topic_id,
+                stream_name,
+                topic_name,
+                partition_id,
+            )
+            .await;
         });
     }
 }
 
-async fn init_system(client: &IggyClient) -> Result<(u32, u32), Box<dyn Error>> {
-    let stream_ident = Identifier::named(STREAM_NAME)?;
-    let topic_ident = Identifier::named(TOPIC_NAME)?;
+async fn init_system(
+    client: &IggyClient,
+    stream_name: &str,
+    topic_name: &str,
+) -> Result<(u32, u32), Box<dyn Error>> {
+    let stream_ident = Identifier::named(stream_name)?;
+    let topic_ident = Identifier::named(topic_name)?;
 
-    let stream = match client.create_stream(STREAM_NAME).await {
+    let stream = match client.create_stream(stream_name).await {
         Ok(stream) => {
             info!("Stream was created.");
             stream
@@ -64,7 +85,7 @@ async fn init_system(client: &IggyClient) -> Result<(u32, u32), Box<dyn Error>> 
     let topic = match client
         .create_topic(
             &stream_ident,
-            TOPIC_NAME,
+            topic_name,
             1,
             CompressionAlgorithm::default(),
             None,
@@ -94,20 +115,23 @@ async fn handle_client(
     client: Arc<IggyClient>,
     stream_id: u32,
     topic_id: u32,
+    stream_name: Arc<str>,
+    topic_name: Arc<str>,
+    partition_id: u32,
 ) -> Result<(), Box<dyn Error>> {
     let duration = IggyDuration::from_str("500ms")?;
     info!(
         "Messages will be sent to stream: {} ({}), topic: {} ({}), partition: {} with interval {}.",
-        STREAM_NAME,
+        stream_name,
         stream_id,
-        TOPIC_NAME,
+        topic_name,
         topic_id,
-        PARTITION_ID,
+        partition_id,
         duration.as_human_time_string()
     );
 
     let messages_per_batch = 10;
-    let partitioning = Partitioning::partition_id(PARTITION_ID);
+    let partitioning = Partitioning::partition_id(partition_id);
     let mut messages = Vec::new();
 
     loop {
@@ -133,8 +157,8 @@ async fn handle_client(
         if messages.len() == messages_per_batch {
             client
                 .send_messages(
-                    &Identifier::named(STREAM_NAME).unwrap(),
-                    &Identifier::named(TOPIC_NAME).unwrap(),
+                    &Identifier::named(&stream_name)?,
+                    &Identifier::named(&topic_name)?,
                     &partitioning,
                     &mut messages,
                 )

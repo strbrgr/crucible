@@ -5,33 +5,37 @@ use std::time::Duration;
 use tokio::time::sleep;
 use tracing::info;
 
-const STREAM_NAME: &str = "sample-stream";
-const TOPIC_NAME: &str = "sample-topic";
-const PARTITION_ID: u32 = 0;
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    tracing_subscriber::fmt::init();
     dotenvy::dotenv().ok();
+    tracing_subscriber::fmt::init();
 
     let root_username =
         env::var("IGGY_ROOT_USERNAME").unwrap_or_else(|_| DEFAULT_ROOT_USERNAME.to_string());
     let root_password =
         env::var("IGGY_ROOT_PASSWORD").map_err(|_| "IGGY_ROOT_PASSWORD must be set (see .env)")?;
+    let stream_name =
+        env::var("IGGY_STREAM_NAME").map_err(|_| "IGGY_STREAM_NAME must be set (see .env)")?;
+    let topic_name =
+        env::var("IGGY_TOPIC_NAME").map_err(|_| "IGGY_TOPIC_NAME must be set (see .env)")?;
+    let partition_id = env::var("IGGY_PARTITION_ID")
+        .map_err(|_| "IGGY_PARTITION_ID must be set (see .env)")?
+        .parse::<u32>()
+        .map_err(|_| "IGGY_PARTITION_ID must be a valid u32")?;
 
     let client = IggyClient::default();
     client.connect().await?;
     client.login_user(&root_username, &root_password).await?;
-    consume_messages(&client).await
+    consume_messages(&client, &stream_name, &topic_name, partition_id).await
 }
 
-async fn consume_messages(client: &IggyClient) -> Result<(), Box<dyn Error>> {
+async fn consume_messages(client: &IggyClient, stream_name: &str, topic_name: &str, partition_id: u32) -> Result<(), Box<dyn Error>> {
     let interval = Duration::from_millis(500);
     info!(
         "Messages will be consumed from stream: {}, topic: {}, partition: {} with interval {} ms.",
-        STREAM_NAME,
-        TOPIC_NAME,
-        PARTITION_ID,
+        stream_name,
+        topic_name,
+        partition_id,
         interval.as_millis()
     );
 
@@ -41,9 +45,9 @@ async fn consume_messages(client: &IggyClient) -> Result<(), Box<dyn Error>> {
     loop {
         let polled_messages = client
             .poll_messages(
-                &STREAM_NAME.try_into()?,
-                &TOPIC_NAME.try_into()?,
-                Some(PARTITION_ID),
+                &stream_name.try_into()?,
+                &topic_name.try_into()?,
+                Some(partition_id),
                 &consumer,
                 &PollingStrategy::offset(offset),
                 messages_per_batch,
