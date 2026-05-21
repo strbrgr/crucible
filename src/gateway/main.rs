@@ -11,51 +11,57 @@ use tokio::{
 };
 use tracing::{info, warn};
 
+struct Config {
+    root_username: String,
+    root_password: String,
+    stream_name: Arc<str>,
+    topic_name: Arc<str>,
+    partition_id: u32,
+}
+
+impl Config {
+    fn from_env() -> Result<Self, Box<dyn Error>> {
+        Ok(Self {
+            root_username: env::var("IGGY_ROOT_USERNAME")
+                .unwrap_or_else(|_| DEFAULT_ROOT_USERNAME.to_string()),
+            root_password: env::var("IGGY_ROOT_PASSWORD")
+                .map_err(|_| "IGGY_ROOT_PASSWORD must be set (see .env)")?,
+            stream_name: env::var("IGGY_STREAM_NAME")
+                .map_err(|_| "IGGY_STREAM_NAME must be set (see .env)")?
+                .into(),
+            topic_name: env::var("IGGY_TOPIC_NAME")
+                .map_err(|_| "IGGY_TOPIC_NAME must be set (see .env)")?
+                .into(),
+            partition_id: env::var("IGGY_PARTITION_ID")
+                .map_err(|_| "IGGY_PARTITION_ID must be set (see .env)")?
+                .parse::<u32>()
+                .map_err(|_| "IGGY_PARTITION_ID must be a valid u32")?,
+        })
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     dotenvy::dotenv().ok();
     tracing_subscriber::fmt::init();
 
-    let root_username =
-        env::var("IGGY_ROOT_USERNAME").unwrap_or_else(|_| DEFAULT_ROOT_USERNAME.to_string());
-    let root_password =
-        env::var("IGGY_ROOT_PASSWORD").map_err(|_| "IGGY_ROOT_PASSWORD must be set (see .env)")?;
-    let stream_name: Arc<str> = env::var("IGGY_STREAM_NAME")
-        .map_err(|_| "IGGY_STREAM_NAME must be set (see .env)")?
-        .into();
-    let topic_name: Arc<str> = env::var("IGGY_TOPIC_NAME")
-        .map_err(|_| "IGGY_TOPIC_NAME must be set (see .env)")?
-        .into();
-    let partition_id = env::var("IGGY_PARTITION_ID")
-        .map_err(|_| "IGGY_PARTITION_ID must be set (see .env)")?
-        .parse::<u32>()
-        .map_err(|_| "IGGY_PARTITION_ID must be a valid u32")?;
-
+    let config = Arc::new(Config::from_env()?);
     let client = Arc::new(IggyClient::default());
     client.connect().await?;
-    client.login_user(&root_username, &root_password).await?;
+    client
+        .login_user(&config.root_username, &config.root_password)
+        .await?;
 
-    let (stream_id, topic_id) = init_system(&client, &stream_name, &topic_name).await?;
+    let (stream_id, topic_id) =
+        init_system(&client, &config.stream_name, &config.topic_name).await?;
     let listener = TcpListener::bind("127.0.0.1:8080").await?;
 
     loop {
         let (stream, _) = listener.accept().await?;
-
         let client = Arc::clone(&client);
-
-        let stream_name = Arc::clone(&stream_name);
-        let topic_name = Arc::clone(&topic_name);
+        let config = Arc::clone(&config);
         tokio::spawn(async move {
-            let _ = handle_client(
-                stream,
-                client,
-                stream_id,
-                topic_id,
-                stream_name,
-                topic_name,
-                partition_id,
-            )
-            .await;
+            let _ = handle_client(stream, client, stream_id, topic_id, config).await;
         });
     }
 }
@@ -115,23 +121,21 @@ async fn handle_client(
     client: Arc<IggyClient>,
     stream_id: u32,
     topic_id: u32,
-    stream_name: Arc<str>,
-    topic_name: Arc<str>,
-    partition_id: u32,
+    config: Arc<Config>,
 ) -> Result<(), Box<dyn Error>> {
     let duration = IggyDuration::from_str("500ms")?;
     info!(
         "Messages will be sent to stream: {} ({}), topic: {} ({}), partition: {} with interval {}.",
-        stream_name,
+        config.stream_name,
         stream_id,
-        topic_name,
+        config.topic_name,
         topic_id,
-        partition_id,
+        config.partition_id,
         duration.as_human_time_string()
     );
 
     let messages_per_batch = 10;
-    let partitioning = Partitioning::partition_id(partition_id);
+    let partitioning = Partitioning::partition_id(config.partition_id);
     let mut messages = Vec::new();
 
     loop {
@@ -157,8 +161,8 @@ async fn handle_client(
         if messages.len() == messages_per_batch {
             client
                 .send_messages(
-                    &Identifier::named(&stream_name)?,
-                    &Identifier::named(&topic_name)?,
+                    &Identifier::named(&config.stream_name)?,
+                    &Identifier::named(&config.topic_name)?,
                     &partitioning,
                     &mut messages,
                 )
