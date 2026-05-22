@@ -5,11 +5,12 @@ use iggy::prelude::{
     IggyExpiry, IggyMessage, MaxTopicSize, MessageClient, Partitioning, StreamClient, TopicClient,
     UserClient,
 };
+use sensor_scenario::SensorReading;
 use tokio::{
     io::AsyncReadExt,
     net::{TcpListener, TcpStream},
 };
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 struct Config {
     root_username: String,
@@ -154,8 +155,13 @@ async fn handle_client(
         let mut buf = vec![0u8; incoming_message_len];
         stream.read_exact(&mut buf).await?;
 
-        let message: String = serde_json::from_slice(&buf)?;
-        let message = IggyMessage::from(message);
+        // Validation gate
+        let unvalidated_message = serde_json::from_slice::<SensorReading>(&buf);
+        if unvalidated_message.is_err() {
+            error!("Message is corrupted.")
+            // TODO: publish to DLQ or different topic
+        }
+        let message = IggyMessage::from(String::from_utf8(buf)?);
         messages.push(message);
 
         if messages.len() == messages_per_batch {
