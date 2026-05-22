@@ -57,7 +57,6 @@ async fn consume_messages(client: &IggyClient, config: &Config) -> Result<(), Bo
     );
 
     let stream_id = Identifier::try_from(config.stream_name.as_str())?;
-    // let topic_id: Identifier = Identifconfig.topic_name.as_str().try_into()?;
     let topic_id = Identifier::try_from(config.topic_name.as_str())?;
     let mut offset = 0;
     let messages_per_batch = 10;
