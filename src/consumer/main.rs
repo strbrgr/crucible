@@ -1,4 +1,6 @@
 use iggy::prelude::*;
+use questdb::ingress::{Buffer, Sender, TimestampNanos};
+use sensor_scenario::{HumidityReading, SensorReading, TemperatureReading};
 use std::env;
 use std::error::Error;
 use std::time::Duration;
@@ -11,6 +13,7 @@ struct Config {
     stream_name: String,
     topic_name: String,
     partition_id: u32,
+    qdb_client_conf: String,
 }
 
 impl Config {
@@ -28,6 +31,8 @@ impl Config {
                 .map_err(|_| "IGGY_PARTITION_ID must be set (see .env)")?
                 .parse::<u32>()
                 .map_err(|_| "IGGY_PARTITION_ID must be a valid u32")?,
+            qdb_client_conf: env::var("QDB_CLIENT_CONF")
+                .map_err(|_| "QDB_CLIENT_CONF must be set (see .env)")?,
         })
     }
 }
@@ -61,6 +66,8 @@ async fn consume_messages(client: &IggyClient, config: &Config) -> Result<(), Bo
     let mut offset = 0;
     let messages_per_batch = 10;
     let consumer = Consumer::default();
+    let mut sender = Sender::from_conf(config.qdb_client_conf.as_str())?;
+
     loop {
         let polled_messages = client
             .poll_messages(
@@ -82,18 +89,33 @@ async fn consume_messages(client: &IggyClient, config: &Config) -> Result<(), Bo
 
         offset += polled_messages.messages.len() as u64;
         for message in polled_messages.messages {
-            handle_message(&message)?;
+            handle_message(&message, &mut sender)?;
         }
         sleep(interval).await;
     }
 }
 
-fn handle_message(message: &IggyMessage) -> Result<(), Box<dyn Error>> {
-    // The payload can be of any type as it is a raw byte array. In this case it's a simple string.
-    let payload = std::str::from_utf8(&message.payload)?;
-    info!(
-        "Handling message at offset: {}, payload: {}...",
-        message.header.offset, payload
-    );
+fn handle_message(message: &IggyMessage, sender: &mut Sender) -> Result<(), Box<dyn Error>> {
+    let sensor_reading = serde_json::from_slice::<SensorReading>(&message.payload)?;
+    let mut buffer = Buffer::new(questdb::ingress::ProtocolVersion::V3);
+
+    match sensor_reading {
+        SensorReading::Temperature(reading) => {
+            buffer
+                .table("temperature")?
+                .symbol("unit", reading.unit)?
+                .column_i64("value", reading.value.into())?
+                .at(TimestampNanos::new(reading.created_at))?;
+        }
+        SensorReading::Humidity(reading) => {
+            buffer
+                .table("humidity")?
+                .column_f64("value", reading.value.into())?
+                .at(TimestampNanos::new(reading.created_at))?;
+        }
+    }
+
+    sender.flush(&mut buffer)?;
+
     Ok(())
 }
