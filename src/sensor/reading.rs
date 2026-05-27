@@ -27,7 +27,7 @@ pub fn generate_sensor_reading(sensor_type: &SensorType, sensor_id: Uuid) -> Sen
     let ts = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
-        .as_millis();
+        .as_nanos() as i64;
 
     match sensor_type {
         SensorType::Temperature => {

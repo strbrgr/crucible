@@ -10,15 +10,27 @@ services:
       IGGY_WEBSOCKET_ADDRESS: "0.0.0.0:8092"
       IGGY_ROOT_USERNAME: ${IGGY_ROOT_USERNAME}
       IGGY_ROOT_PASSWORD: ${IGGY_ROOT_PASSWORD}
+      QDB_CLIENT_CONF: ${QDB_CLIENT_CONF}
     ports:
       - "3000:3000"   # HTTP API
       - "8090:8090"   # TCP transport (iggy client default)
       - "8092:8092"   # WebSocket transport
     volumes:
       - iggy-server:/local_data
+  questdb:
+      image: questdb/questdb:latest
+      container_name: questdb
+      ports:
+        - "9000:9000"   # HTTP console + REST API
+        - "9009:9009"   # InfluxDB line protocol (for writes)
+        - "8812:8812"   # PostgreSQL wire protocol
+      volumes:
+        - questdb-data:/var/lib/questdb
 
 volumes:
   iggy-server:
+    driver: local
+  questdb-data:
     driver: local
 
 networks:

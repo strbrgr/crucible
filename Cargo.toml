@@ -16,8 +16,10 @@ name = "consumer"
 path = "src/consumer/main.rs"
 
 [dependencies]
+chrono = "0.4.44"
 dotenvy = "0.15"
 iggy = "0.10.0"
+questdb-rs = { version = "6.1.0", features = ["chrono_timestamp"] }
 rand = "0.10.0"
 serde = "1.0.228"
 serde_json = "1.0.149"
