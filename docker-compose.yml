@@ -18,19 +18,33 @@ services:
     volumes:
       - iggy-server:/local_data
   questdb:
-      image: questdb/questdb:latest
-      container_name: questdb
-      ports:
-        - "9000:9000"   # HTTP console + REST API
-        - "9009:9009"   # InfluxDB line protocol (for writes)
-        - "8812:8812"   # PostgreSQL wire protocol
-      volumes:
-        - questdb-data:/var/lib/questdb
+    image: questdb/questdb:latest
+    container_name: questdb
+    ports:
+      - "9000:9000"   # HTTP console + REST API
+      - "9009:9009"   # InfluxDB line protocol (for writes)
+      - "8812:8812"   # PostgreSQL wire protocol
+    volumes:
+      - questdb-data:/var/lib/questdb
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - questdb
 
 volumes:
   iggy-server:
     driver: local
   questdb-data:
+    driver: local
+  grafana-data:
     driver: local
 
 networks:
