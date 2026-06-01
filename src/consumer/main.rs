@@ -1,6 +1,6 @@
 use iggy::prelude::*;
 use questdb::ingress::{Buffer, Sender, TimestampNanos};
-use sensor_scenario::{HumidityReading, SensorReading, TemperatureReading};
+use sensor_scenario::SensorReading;
 use std::env;
 use std::error::Error;
 use std::time::Duration;
